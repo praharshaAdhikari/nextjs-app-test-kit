@@ -42,7 +42,7 @@ that isn't possible, not the default.
 ## The contract with developers
 
 - Testids are an API. Adding one is free. Renaming or removing one is a breaking change:
-  tick the "QA impact" box in the PR template and list it.
+  list it in the PR description so whoever maintains the tests knows.
 - Ship them to production. Don't strip them in the build; production smoke tests use them and
   the byte cost is negligible.
 - Components must forward the attribute: spread `...rest` onto the root element so

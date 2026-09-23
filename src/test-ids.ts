@@ -2,7 +2,7 @@
  * Single source of truth for data-testid values.
  *
  * Imported by components AND by tests (Jest and Playwright), so renaming one is a
- * refactor that the compiler checks, not a grep across two repos.
+ * refactor that the compiler checks, not a search through every test.
  *
  * Before adding an entry, run the checklist in docs/testid-conventions.md:
  * role, label, text first. A testid is for containers of repeated items, CMS-driven copy,

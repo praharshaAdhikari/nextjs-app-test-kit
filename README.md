@@ -1,7 +1,8 @@
 # Next.js app test kit: unit tests, test-id conventions, PR gate
 
-Drop-in files for a Next.js (App Router, TypeScript) project. Pairs with the QA pipeline
-starter (Playwright), which covers end-to-end; this kit covers everything below it.
+Drop-in files for a Next.js (App Router, TypeScript) project: Jest and Testing Library for
+unit and component tests, test-id conventions, and a PR workflow. End-to-end tests (Playwright)
+live in the app's `tests/` folder; `docs/new-project-checklist.md` covers setting them up.
 
 This repo is not an app and has no `package.json`: running `npm install` or `npm test` in it
 does nothing. `setup.sh` adds it to an app with one command, described below.
@@ -19,7 +20,7 @@ jest.environment.mjs          -> repo root. jsdom plus fetch/Response/TextEncode
 eslint.testing.mjs            -> repo root. Spread into eslint.config.mjs (see below)
 package.additions.json        -> merge scripts + devDependencies into package.json
 .nvmrc                        -> repo root
-.github/workflows/pr-checks.yml -> replaces the QA starter's version inside the app repo
+.github/workflows/pr-checks.yml -> the app's PR gate: lint, typecheck, unit tests, then Playwright smoke
 src/test-ids.ts               -> the only place data-testid values are defined
 src/test/render.tsx           -> render() wrapped in your providers
 src/test/navigation.ts        -> mockRouter and mockUrl() for the mocked App Router hooks
@@ -430,9 +431,9 @@ npm run test:unit:coverage           # adds coverage/ (open coverage/lcov-report
 npm run check                        # lint + typecheck + unit, run before pushing
 ```
 
-## How the two repos fit together
+## How unit and end-to-end tests fit together
 
-Inside the app repo:
+Inside the app:
 
 - `src/**/*.test.tsx` are Jest (fast, no server)
 - `tests/**/*.spec.ts` are Playwright (real browser, against `npm run start` in CI)
@@ -448,6 +449,5 @@ appear in the run's Summary tab.
 1. **The lint rule.** `data-testid="literal"` is an error, so the constants file cannot rot.
 2. **The reference tests.** New developers copy the nearest example; make sure it is a good one.
 3. **Definition of Done.** New component or util: tests for its behaviours. Bug fix: a
-   regression test. Reviewed like production code. It is in the QA pipeline starter's
-   `docs/team-practices.md` and the
-   ClickUp checklist template.
+   regression test. Reviewed like production code. `docs/new-project-checklist.md` (section 6)
+   has a version to agree as a team and put on every story.

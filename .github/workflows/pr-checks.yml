@@ -42,7 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      TEAM_SITE_URL: http://localhost:3000
       # Build-time env the app needs (public keys, API base URLs). Never real secrets for prod.
       # NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
     steps:
@@ -55,8 +54,10 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Build the app from this PR
         run: npm run build
+      # Assumes playwright.config.ts has a `chromium` project and a webServer that runs
+      # `npm run start` when CI is set (see docs/new-project-checklist.md, section 3).
       - name: Run smoke suite (Playwright starts `npm run start` via webServer)
-        run: npx playwright test --grep @smoke --project=team-site-chromium
+        run: npx playwright test --grep @smoke --project=chromium
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
