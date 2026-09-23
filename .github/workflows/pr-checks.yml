@@ -1,0 +1,65 @@
+# PR gate for the Next.js repo: static checks and unit tests first (fast), then Playwright
+# smoke against THIS PR's build. Target: green in under 10 minutes.
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Lint, typecheck, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit:coverage
+      - name: Coverage summary
+        if: ${{ always() }}
+        run: |
+          node -e "const t=require('./coverage/coverage-summary.json').total; console.log('## Unit test coverage\n\nLines ' + t.lines.pct + '% | Branches ' + t.branches.pct + '% | Functions ' + t.functions.pct + '%')" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: coverage-${{ github.run_number }}
+          path: coverage/lcov-report
+          retention-days: 7
+
+  smoke:
+    name: Smoke tests (Chromium, PR build)
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TEAM_SITE_URL: http://localhost:3000
+      # Build-time env the app needs (public keys, API base URLs). Never real secrets for prod.
+      # NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build the app from this PR
+        run: npm run build
+      - name: Run smoke suite (Playwright starts `npm run start` via webServer)
+        run: npx playwright test --grep @smoke --project=team-site-chromium
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-smoke-${{ github.run_number }}
+          path: playwright-report
+          retention-days: 14
