@@ -44,7 +44,9 @@ they mean quality is the default instead of a retrofit.
 
 - [ ] Walk through `docs/unit-testing-practices.md` and `docs/testid-conventions.md` (this kit)
 - [ ] Agree the Definition of Done in the QA starter's `docs/team-practices.md`
-- [ ] Agree the branch naming rule: `CU-<taskid>-short-description`
+- [ ] Agree the branch naming rule: `<type>/<task-id>-<short-title>`, where type is what the
+      change adds (`feat`, `fix`, `chore`, ...), task-id is the ClickUp task ID, and short-title is
+      a few words from the task name in kebab-case. Example: `feat/z8rcte9c5c-guest-account-claim`
 - [ ] Decide who reviews test code (answer: the same people who review production code)
 
 ## 7. First feature
