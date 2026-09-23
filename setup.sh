@@ -158,7 +158,12 @@ edit('jest.config.mjs', [
   ["'!src/", "'!"],
   ['only picks up src/', 'only picks up '],
 ]);
-edit('eslint.testing.mjs', [["'src/**", "'**"], ['src/test-ids.ts', 'test-ids.ts']]);
+// Every 'src/...' glob (including 'src/test/**'), and the paths named in comments.
+edit('eslint.testing.mjs', [["'src/", "'"], ['src/test-ids.ts', 'test-ids.ts']]);
+edit('jest.setup.ts', [['src/test/', 'test/']]);
+if (fs.existsSync('examples/components/cart.test.tsx')) {
+  edit('examples/components/cart.test.tsx', [['src/test/', 'test/']]);
+}
 NODE
   fi
 

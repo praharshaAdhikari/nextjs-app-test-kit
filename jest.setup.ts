@@ -16,6 +16,14 @@ jest.mock('next/navigation', () => ({
 
 const originalEnv = process.env;
 
+// jsdom does not implement scrolling: without this, code that calls window.scrollTo (scroll
+// locks in modals, "back to top") prints "Not implemented: window.scrollTo" in every test that
+// reaches it. A jest.fn, so a test can check it: expect(window.scrollTo).toHaveBeenCalledWith(0, 0).
+// Server tests (@jest-environment node) have no window.
+if (typeof window !== 'undefined') {
+  window.scrollTo = jest.fn();
+}
+
 // The fake API (src/test/server.ts). 'error' fails a test that calls an endpoint it did not mock.
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterAll(() => server.close());

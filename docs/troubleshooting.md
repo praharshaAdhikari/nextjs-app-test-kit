@@ -52,6 +52,18 @@ existing config.
 
 **Fix:** `testEnvironment: '<rootDir>/jest.environment.mjs'` in `jest.config.mjs`.
 
+## "Error: Not implemented: window.scrollTo"
+
+**Cause:** jsdom does not implement scrolling. Code that scrolls (a scroll lock when a modal
+opens, a "back to top" button) prints this error in every test that reaches it. The test still
+passes; it is noise.
+
+**Fix:** `jest.setup.ts` already replaces `window.scrollTo` with a `jest.fn()`, so a test can
+check it: `expect(window.scrollTo).toHaveBeenCalledWith(0, 0)`. If you merged the kit into an
+existing setup file, copy that block. Other APIs jsdom lacks (`scrollIntoView`, `matchMedia`,
+`ResizeObserver`) throw instead; stub them the same way, in `jest.setup.ts`, when a component
+needs one.
+
 ## "ReferenceError: document is not defined"
 
 **Cause:** the test file starts with `@jest-environment node` (meant for route handlers and
