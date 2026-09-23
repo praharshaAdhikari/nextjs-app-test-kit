@@ -3,14 +3,14 @@
 # current directory. Run it from the app's root:
 #
 #   curl -fsSL https://raw.githubusercontent.com/praharshaAdhikari/nextjs-app-test-kit/main/setup.sh | bash
-#   curl -fsSL .../setup.sh | bash -s -- --examples     also copy two reference tests
+#   curl -fsSL .../setup.sh | bash -s -- --examples     also copy the reference tests
 #
 # It downloads the kit to a temporary folder, copies the files the app needs, installs the
 # dev dependencies, adds the npm scripts, wires ESLint, checks that Jest starts, and deletes
 # the download. It never overwrites an existing file unless you pass --force.
 #
 # Options:
-#   --examples     copy src/lib/apply-coupon.* and src/lib/format-price.* (reference tests)
+#   --examples     copy the reference tests and the code they test into src/examples/
 #   --force        overwrite kit files that already exist in the app
 #   --no-install   copy and configure only; skip installing dependencies and the Jest check
 #
@@ -107,15 +107,13 @@ main() {
     "eslint.testing.mjs:eslint.testing.mjs"
     "src/test/render.tsx:$base/test/render.tsx"
     "src/test/navigation.ts:$base/test/navigation.ts"
+    "src/test/server.ts:$base/test/server.ts"
     "src/test-ids.ts:$base/test-ids.ts"
   )
+  # The examples are one folder: nothing else in the app imports them, so deleting the folder
+  # removes them cleanly. They are not under app/, so they add no routes to the site.
   if [ "$examples" = 1 ]; then
-    files+=(
-      "src/lib/apply-coupon.ts:$base/lib/apply-coupon.ts"
-      "src/lib/apply-coupon.test.ts:$base/lib/apply-coupon.test.ts"
-      "src/lib/format-price.ts:$base/lib/format-price.ts"
-      "src/lib/format-price.test.ts:$base/lib/format-price.test.ts"
-    )
+    files+=("src/examples:$base/examples")
   fi
 
   for pair in "${files[@]}"; do
@@ -130,8 +128,14 @@ main() {
     src="${pair%%:*}"
     dest="${pair#*:}"
     mkdir -p "$(dirname "$dest")"
-    cp "$kit/$src" "$dest"
-    echo "  ${dest#./}"
+    if [ -d "$kit/$src" ]; then
+      rm -rf "$dest"
+      cp -R "$kit/$src" "$dest"
+      echo "  ${dest#./}/ ($(find "$dest" -name '*.test.*' | wc -l | tr -d ' ') test files)"
+    else
+      cp "$kit/$src" "$dest"
+      echo "  ${dest#./}"
+    fi
   done
   if [ ! -e .nvmrc ]; then
     cp "$kit/.nvmrc" .nvmrc
@@ -228,7 +232,23 @@ NODE
     step "Installing dev dependencies with $pm"
     # shellcheck disable=SC2086 # $deps is a space-separated list on purpose
     case "$pm" in
-      pnpm) pnpm add -D $deps </dev/null ;;
+      pnpm)
+        # pnpm 11 stops on dependencies with install scripts nobody has approved yet, and writes
+        # a placeholder into pnpm-workspace.yaml. Two come with this kit, and neither is needed:
+        # msw's copies a browser service worker (Jest does not use it) and @parcel/watcher's
+        # compiles a file watcher only when no prebuilt binary fits. Deny those two, like
+        # create-next-app does for sharp; anything else is left for you to decide.
+        pnpm add -D --config.strict-dep-builds=false $deps </dev/null
+        if [ -f pnpm-workspace.yaml ] && grep -q 'set this to true or false' pnpm-workspace.yaml; then
+          sed -i.bak -E "s/^( +(msw|'@parcel\/watcher')): set this to true or false$/\1: false/" pnpm-workspace.yaml
+          rm -f pnpm-workspace.yaml.bak
+          if grep -q 'set this to true or false' pnpm-workspace.yaml; then
+            warn "pnpm-workspace.yaml lists packages waiting for a build decision. Run 'pnpm approve-builds'."
+          else
+            pnpm install </dev/null
+          fi
+        fi
+        ;;
       yarn) yarn add -D $deps </dev/null ;;
       bun) bun add -d $deps </dev/null ;;
       npm) npm install -D --no-audit --no-fund $deps </dev/null ;;
@@ -258,7 +278,7 @@ Adds Jest + Testing Library unit tests to the Next.js app in the current directo
 Usage: curl -fsSL <url>/setup.sh | bash -s -- [options]
 
 Options:
-  --examples     also copy two reference tests (lib/apply-coupon, lib/format-price)
+  --examples     also copy the reference tests into src/examples/ (delete it when done)
   --force        overwrite kit files that already exist in the app
   --no-install   copy and configure only; skip installing dependencies and the Jest check
   -h, --help     show this help

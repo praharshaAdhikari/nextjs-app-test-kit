@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom';
 import { useParams, useRouter } from 'next/navigation';
 import { mockRouter, mockUrl } from '@/test/navigation';
+import { server } from '@/test/server';
 
 // App Router hooks throw when rendered outside Next.js, so they are mocked for every test.
 // jest.mock is hoisted above the imports, so the imports above get the mocked versions.
@@ -14,6 +15,10 @@ jest.mock('next/navigation', () => ({
 }));
 
 const originalEnv = process.env;
+
+// The fake API (src/test/server.ts). 'error' fails a test that calls an endpoint it did not mock.
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+afterAll(() => server.close());
 
 beforeEach(() => {
   // Defaults, set before every test because jest.resetAllMocks (below) removes them.
@@ -35,5 +40,6 @@ afterEach(() => {
   // test. It removes the defaults above too, which is why they are set in beforeEach.
   jest.resetAllMocks();
   jest.useRealTimers();
+  server.resetHandlers();
   process.env = originalEnv;
 });

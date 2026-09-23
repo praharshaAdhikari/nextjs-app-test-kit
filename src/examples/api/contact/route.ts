@@ -1,5 +1,5 @@
-import { sendEmail } from '@/lib/mailer';
-import { validateContact, type ContactInput } from '@/lib/validate-contact';
+import { sendEmail } from '@/examples/lib/mailer';
+import { validateContact, type ContactInput } from '@/examples/lib/validate-contact';
 
 /** Anything can arrive in a request body; only a full set of strings reaches validation. */
 function parseContact(body: unknown): ContactInput | null {

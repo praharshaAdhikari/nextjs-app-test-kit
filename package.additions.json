@@ -17,6 +17,7 @@
     "eslint-plugin-jest-dom": "^5.5.0",
     "eslint-plugin-testing-library": "^7.0.0",
     "jest": "^30.5.0",
-    "jest-environment-jsdom": "^30.5.0"
+    "jest-environment-jsdom": "^30.5.0",
+    "msw": "^2.15.0"
   }
 }

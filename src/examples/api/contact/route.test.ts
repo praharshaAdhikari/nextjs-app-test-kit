@@ -3,11 +3,11 @@
  */
 // Server code runs in Node, not a browser: the node environment is faster and has no DOM to
 // accidentally depend on.
-import { sendEmail } from '@/lib/mailer';
+import { sendEmail } from '@/examples/lib/mailer';
 import { POST } from './route';
 
 // The mailer is infrastructure: mock the module, never validateContact or the handler itself.
-jest.mock('@/lib/mailer');
+jest.mock('@/examples/lib/mailer');
 
 const valid = { name: 'Ada Lovelace', email: 'ada@example.com', message: 'I would like a quote.' };
 

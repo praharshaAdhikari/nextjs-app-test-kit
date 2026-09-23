@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/lib/db';
+import { db } from '@/examples/lib/db';
 
 export type SubscribeState = { status: 'idle' | 'success' | 'error'; message?: string };
 

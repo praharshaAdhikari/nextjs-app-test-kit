@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useDebouncedValue } from '@/examples/hooks/use-debounced-value';
 
 /**
  * Keeps `?q=` in the URL in step with what the user types, once they pause.

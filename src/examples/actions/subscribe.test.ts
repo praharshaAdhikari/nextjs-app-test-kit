@@ -1,12 +1,12 @@
 /**
  * @jest-environment node
  */
-import { db } from '@/lib/db';
+import { db } from '@/examples/lib/db';
 import { subscribe } from './subscribe';
 
 // The database is the one module we mock (rule 5's allowed exception). jest.mock with no factory
 // replaces every function in it with a jest.fn that returns undefined.
-jest.mock('@/lib/db');
+jest.mock('@/examples/lib/db');
 
 const idle = { status: 'idle' } as const;
 

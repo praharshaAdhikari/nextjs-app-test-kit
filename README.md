@@ -23,22 +23,27 @@ package.additions.json        -> merge scripts + devDependencies into package.js
 src/test-ids.ts               -> the only place data-testid values are defined
 src/test/render.tsx           -> render() wrapped in your providers
 src/test/navigation.ts        -> mockRouter and mockUrl() for the mocked App Router hooks
-src/lib/format-price.ts       (+ .test.ts)   reference: pure function
-src/lib/validate-contact.ts   (+ .test.ts)   reference: table test
-src/lib/apply-coupon.ts       (+ .test.ts)   reference: the worked example below
-src/components/ui/button.tsx  (+ .test.tsx)  reference: prop forwarding, role queries
-src/components/contact-form.tsx (+ .test.tsx) reference: form flow with fetch stubbed
-src/hooks/use-debounced-value.ts (+ .test.ts) reference: custom hook, fake timers
-src/components/search-box.tsx (+ .test.tsx)   reference: userEvent + fake timers, navigation
-src/app/api/contact/route.ts  (+ .test.ts)   reference: route handler, hostile input
-src/app/actions/subscribe.ts  (+ .test.ts)   reference: server action, database mocked
-src/lib/mailer.ts, src/lib/db.ts             -> infrastructure boundaries the tests mock
-docs/unit-testing-practices.md
+src/test/server.ts            -> the fake API (MSW) that tests configure per test
+src/examples/                 -> reference tests and the code they test (see src/examples/README.md)
+  lib/                          pure functions: apply-coupon (walkthrough below), format-price, validate-contact
+  components/confirm-dialog     a component from scratch: roles, keyboard, focus (walkthrough below)
+  components/product-list       loading / empty / error / loaded against the fake API
+  components/cart               components and a hook that need a provider
+  components/contact-form       a form's five states, a response held in flight
+  components/search-box         fake timers with userEvent, navigation
+  components/ui/button          props reaching the DOM
+  hooks/use-debounced-value     a custom hook
+  api/contact/route             a route handler, hostile request bodies
+  actions/subscribe             a server action, database mocked
+docs/unit-testing-practices.md  the rules, required tests by kind of code, worked examples
+docs/troubleshooting.md         exact error messages and their fixes
+docs/testid-conventions.md      when a data-testid is the right tool, and how to name it
 docs/new-project-checklist.md
 ```
 
-The reference files are examples to copy from, not part of the setup. Bring the ones you want
-into the app to read and run, and delete them once the app has real tests of the same kind.
+The examples are there to copy from, not part of the setup. `setup.sh --examples` puts the
+whole folder in the app; nothing else imports it and it adds no routes, so deleting
+`src/examples/` removes them cleanly once the app has tests of its own.
 
 ## Start testing in a new repo
 
@@ -59,8 +64,7 @@ It downloads this repo to a temporary folder, then:
 
 1. copies `jest.config.mjs`, `jest.setup.ts`, `jest.environment.mjs`, `eslint.testing.mjs`,
    `src/test/`, `src/test-ids.ts` and `.nvmrc` into the app
-2. with `--examples`, also copies two reference tests: `src/lib/apply-coupon.*` and
-   `src/lib/format-price.*`
+2. with `--examples`, also copies `src/examples/`: 12 reference tests and the code they test
 3. adds the `test:unit`, `test:unit:watch`, `test:unit:coverage`, `typecheck` and `check` scripts
 4. adds the testing rules to `eslint.config.mjs`, and tells ESLint to skip `coverage/`
 5. installs the dev dependencies listed in `package.additions.json`, with npm, pnpm, yarn or bun
@@ -103,6 +107,9 @@ The script handles these on its own:
 - **Scripts you already have** (a `typecheck` or `check` of your own) are kept; the script prints
   the ones it skipped.
 - **Files that already exist** stop the script before it changes anything.
+- **pnpm 11 build approvals:** the kit's two packages with install scripts (`msw`,
+  `@parcel/watcher`) are set to `false` in `pnpm-workspace.yaml`; neither is needed for tests.
+  Any other package waiting for a decision is left to you (`pnpm approve-builds`).
 
 It stops and asks you to decide in these cases:
 
@@ -152,7 +159,7 @@ mkdir -p src/test && cp $KIT/src/test/* src/test/ && cp $KIT/src/test-ids.ts src
 
 npm install -D jest jest-environment-jsdom @types/jest \
   @testing-library/react @testing-library/dom @testing-library/jest-dom @testing-library/user-event \
-  eslint-plugin-testing-library eslint-plugin-jest-dom eslint-plugin-jest
+  eslint-plugin-testing-library eslint-plugin-jest-dom eslint-plugin-jest msw
 
 npm pkg set scripts.test:unit="jest" scripts.test:unit:watch="jest --watch" \
   scripts.test:unit:coverage="jest --coverage" scripts.typecheck="tsc --noEmit" \
@@ -178,8 +185,9 @@ tests for everything at once:
 
 ## Writing a function and its tests
 
-The worked example is `src/lib/apply-coupon.ts`: take a percentage or fixed amount off a cart
-subtotal, with an expiry date and a minimum spend. The full files are in this kit.
+The worked example is `applyCoupon`: take a percentage or fixed amount off a cart subtotal,
+with an expiry date and a minimum spend. Write yours in `src/lib/`; the finished files are in
+`src/examples/lib/apply-coupon.*`.
 
 **1. List the behaviours before writing code.** Each becomes an `it`:
 
@@ -277,12 +285,146 @@ For a component, hook, route handler or server action, copy the nearest referenc
 `docs/unit-testing-practices.md` lists the cases each kind of code must cover ("Required tests,
 by kind of code") and the ten rules reviewers check.
 
+## Writing a component and its tests
+
+A component test does what a user does and checks what a user sees. The worked example is a
+`ConfirmDialog`: a "Delete project" button that opens a dialog asking to confirm. The finished
+files are in `src/examples/components/confirm-dialog.*`.
+
+**1. List what the user can see and do.** Not state, props or internals: only what shows on the
+screen and what the user can click or type.
+
+- the dialog is closed until the button is clicked
+- it opens with its title and message, with focus on Cancel (the safe choice)
+- Cancel closes it, does nothing, and puts focus back on the button
+- Escape closes it too
+- Delete confirms once and closes
+- if confirming fails, it stays open and shows an error
+
+**2. Write the tests,** next to the component: `src/components/confirm-dialog.test.tsx`.
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ConfirmDialog } from './confirm-dialog';
+
+/** Renders the dialog closed, the way it first appears on the page. */
+function renderDialog(onConfirm = jest.fn()) {
+  render(
+    <ConfirmDialog triggerLabel="Delete project" title="Delete this project?" confirmLabel="Delete" onConfirm={onConfirm}>
+      This removes the project and all its tasks.
+    </ConfirmDialog>,
+  );
+  return { onConfirm, trigger: screen.getByRole('button', { name: 'Delete project' }) };
+}
+
+describe('ConfirmDialog', () => {
+  it('is closed until the trigger is clicked', () => {
+    renderDialog();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens with its title, its message, and focus on Cancel', async () => {
+    const { trigger } = renderDialog();
+
+    await userEvent.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Delete this project?' });
+    expect(dialog).toHaveTextContent('This removes the project and all its tasks.');
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  });
+
+  it('closes on Cancel without confirming, and gives focus back to the trigger', async () => {
+    const { onConfirm, trigger } = renderDialog();
+    await userEvent.click(trigger);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('stays open with an error when confirming fails', async () => {
+    const { trigger } = renderDialog(jest.fn().mockRejectedValue(new Error('server down')));
+    await userEvent.click(trigger);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/try again/i);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  // ...Escape, and confirming successfully: see the full file
+});
+```
+
+**3. Write the component** until the tests pass. Getting the markup right is what makes it
+testable, and it is the same markup a screen reader needs:
+
+- `role="dialog"` and `aria-labelledby` pointing at the title, so `getByRole('dialog', { name })`
+  finds it
+- real `<button>` elements with visible text, so `getByRole('button', { name: 'Cancel' })` works
+- `role="alert"` on the error, so it is announced and `findByRole('alert')` finds it
+
+The dialog renders into `document.body` with a portal. `screen` queries the whole document, so
+the tests do not need to know that.
+
+**4. Break it on purpose** (remove the Escape handler, or the line that moves focus back) and
+check a test fails. Then `npm run check`.
+
+### Finding elements and checking results
+
+| You want | Use |
+|---|---|
+| An element that must be there | `screen.getByRole('button', { name: 'Save' })` |
+| To check something is *not* there | `expect(screen.queryByRole('dialog')).not.toBeInTheDocument()` |
+| Something that appears later (after a fetch, a timer) | `await screen.findByRole('alert')` |
+| An element inside one part of the page | `within(row).getByText('$34.50')` |
+| A form field | `screen.getByLabelText('Email')` or `getByRole('textbox', { name: 'Email' })` |
+| A click, typing, a key | `await userEvent.click(el)`, `await userEvent.type(el, 'text')`, `await userEvent.keyboard('{Escape}')` |
+| A choice in a `<select>` | `await userEvent.selectOptions(select, 'Price, low to high')` |
+
+Prefer role and label queries; they fail when the page is not accessible, which is a bug worth
+knowing about. `getByTestId` is for the cases in `docs/testid-conventions.md`.
+
+Useful checks from jest-dom: `toBeVisible`, `toBeDisabled`, `toHaveFocus`, `toHaveValue`,
+`toHaveTextContent` (a string matches anywhere in the text; use `/^...$/` for all of it),
+`toHaveAccessibleDescription`, `toHaveAttribute`.
+
+### Other kinds of component
+
+Copy the nearest example from `src/examples/components/`:
+
+| Your component | Example | What it shows |
+|---|---|---|
+| Loads data from an API | `product-list` | Faking the API with MSW; loading, empty, error with retry, loaded; a test data builder |
+| Needs a provider (context, theme, store) | `cart` | `render(ui, { wrapper: Provider })`; `renderHook` with a wrapper; app-wide providers in `src/test/render.tsx` |
+| A form that submits | `contact-form` | Invalid, submitting, success, server error, network error; checking what was sent |
+| Reacts to typing over time, or changes the URL | `search-box` | Fake timers with `userEvent`; `mockRouter` and `mockUrl` |
+| A small shared UI piece | `ui/button` | Props reaching the DOM; disabled and busy states |
+
+The fake API in two lines, from `product-list.test.tsx`:
+
+```ts
+import { http, HttpResponse } from 'msw';
+import { server } from '@/test/server';
+
+server.use(http.get('/api/products', () => HttpResponse.json([buildProduct({ name: 'Mug' })])));
+```
+
+A request the test did not fake fails the test. More in `docs/unit-testing-practices.md`
+("Faking the API"), and the cases each kind of code must cover are under "Required tests, by
+kind of code". When a test fails with an error you do not recognise, see
+[`docs/troubleshooting.md`](docs/troubleshooting.md).
+
 ## Commands
 
 ```bash
 npm run test:unit                    # one run, used by CI
 npm run test:unit:watch              # reruns affected tests as you save
-npx jest src/lib/apply-coupon        # one file (any part of the path works)
+npx jest confirm-dialog              # one file (any part of the path works)
 npx jest -t "minimum spend"          # tests whose name matches
 npm run test:unit:coverage           # adds coverage/ (open coverage/lcov-report/index.html)
 npm run check                        # lint + typecheck + unit, run before pushing
@@ -306,5 +448,6 @@ appear in the run's Summary tab.
 1. **The lint rule.** `data-testid="literal"` is an error, so the constants file cannot rot.
 2. **The reference tests.** New developers copy the nearest example; make sure it is a good one.
 3. **Definition of Done.** New component or util: tests for its behaviours. Bug fix: a
-   regression test. Reviewed like production code. It is in `docs/team-practices.md` and the
+   regression test. Reviewed like production code. It is in the QA pipeline starter's
+   `docs/team-practices.md` and the
    ClickUp checklist template.

@@ -31,8 +31,8 @@ rendering; move the fetching into a `lib/` function and test that.
    sequence of events a real click does. In a test with fake timers, create the user with
    `userEvent.setup({ advanceTimers: jest.advanceTimersByTime })` (see "Time" below).
 4. **`findBy*` after anything asynchronous.** Never `setTimeout` or arbitrary waits.
-5. **Mock only at the boundary.** Network (`global.fetch = jest.fn()`, or MSW when the
-   surface grows), time (`jest.useFakeTimers()`), randomness, `next/navigation`, and
+5. **Mock only at the boundary.** Network (MSW: `server.use(http.get(...))`, see "Faking the
+   API" below), time (`jest.useFakeTimers()`), randomness, `next/navigation`, and
    infrastructure clients (database, payment SDK). Do not mock your own modules or child
    components; if you feel you need to, the component is doing too much.
 6. **One behaviour per test, named as a sentence.** `it('shows an error when the email is
@@ -89,13 +89,13 @@ kit to copy.
 - [ ] Server error: `fetch` resolves with a 4xx/5xx, and the message is shown
 - [ ] Network error: `fetch` *rejects* (offline). This is a different code path from a 500
 
-**Route handler** (`app/api/contact/route`)
+**Route handler** (`examples/api/contact/route`)
 - [ ] One test per status code it can return, asserting status *and* body
 - [ ] Hostile bodies: malformed JSON, `{}`, wrong types, `null`. Each is a 400, never a 500
 - [ ] Nothing is sent or written when the request is rejected
 - [ ] The downstream service failing maps to the documented status (e.g. 502)
 
-**Server action** (`app/actions/subscribe`)
+**Server action** (`examples/actions/subscribe`)
 - [ ] Success: the returned state *and* what was written, with normalised input
 - [ ] Validation failure returns an error state and does not touch the database
 - [ ] Idempotency or duplicate handling, if the action promises it
@@ -178,10 +178,10 @@ Assert the exact URL. `toHaveBeenCalled()` alone passes when the query string is
 /**
  * @jest-environment node
  */
-import { sendEmail } from '@/lib/mailer';
+import { sendEmail } from '@/examples/lib/mailer';
 import { POST } from './route';
 
-jest.mock('@/lib/mailer'); // infrastructure only; validation runs for real
+jest.mock('@/examples/lib/mailer'); // infrastructure only; validation runs for real
 
 it.each([
   ['malformed JSON', '{"name":'],
@@ -202,7 +202,7 @@ code without jsdom: it is faster, and a test cannot pass by accident because `wi
 ### A server action: mock the database module, assert what was written
 
 ```ts
-jest.mock('@/lib/db'); // every function becomes a jest.fn that returns undefined
+jest.mock('@/examples/lib/db'); // every function becomes a jest.fn that returns undefined
 
 it('stores a new subscriber with a normalised email', async () => {
   jest.mocked(db.subscriber.findByEmail).mockResolvedValue(null);
@@ -215,24 +215,52 @@ it('stores a new subscriber with a normalised email', async () => {
 });
 ```
 
-Keep the real database client behind one module (`src/lib/db.ts`) so there is exactly one thing
+Keep the real database client behind one module (`src/lib/db.ts` in your app) so there is exactly one thing
 to mock. A server action that imports Prisma directly in five places is five mocks to maintain.
 
-### A form's in-flight state: control when the request finishes
+### Faking the API: MSW
+
+`src/test/server.ts` is a fake API that `jest.setup.ts` starts before the tests and resets after
+each one. A test says what each endpoint returns; the component's real `fetch`, status checks
+and JSON parsing all run:
 
 ```ts
-const response = Promise.withResolvers<Response>();
-jest.mocked(fetch).mockReturnValue(response.promise);
+import { http, HttpResponse } from 'msw';
+import { server } from '@/test/server';
+
+server.use(http.get('/api/products', () => HttpResponse.json([buildProduct({ name: 'Mug' })])));
+server.use(http.get('/api/products', () => HttpResponse.json({ message: 'Oops' }, { status: 500 })));
+server.use(http.get('/api/products', () => HttpResponse.error())); // network down
+```
+
+- A request with no handler fails the test (`onUnhandledRequest: 'error'`), so nothing reaches a
+  real server by accident.
+- Give error responses a JSON body, like the real API. With an empty body, `response.json()`
+  fails anyway and hides a missing `if (!response.ok)`.
+- Handlers passed to one `server.use` call are tried in order: put a `{ once: true }` handler
+  first to fail only the first request.
+- To check what was sent, record it in the handler: `sent.push(await request.json())`.
+
+### A form's in-flight state: control when the response arrives
+
+```ts
+const release = Promise.withResolvers<void>();
+server.use(
+  http.post('/api/contact', async () => {
+    await release.promise; // the response waits until the test says so
+    return new HttpResponse(null, { status: 200 });
+  }),
+);
 // ...fill in and submit...
 
-const button = screen.getByRole('button', { name: 'Please wait' });
+const button = await screen.findByRole('button', { name: 'Please wait' });
 expect(button).toBeDisabled();
 
-response.resolve(new Response(null, { status: 200 }));
+release.resolve();
 expect(await screen.findByTestId(TID.contactSuccess)).toBeVisible();
 ```
 
-Resolve the promise before the test ends so the component can finish updating.
+Release the response before the test ends so the component can finish updating.
 
 ### Regression tests
 
@@ -252,7 +280,7 @@ Test code is reviewed like production code. On a PR, check:
 - [ ] The names read as a list of behaviours; the file's `it` names alone explain the feature
 - [ ] Each required case for its kind of code (above) is present, or its absence is explained
 - [ ] Queries are by role or label; any `getByTestId` uses `TID` and has a reason
-- [ ] Mocks are only at a boundary (network, time, navigation, `@/lib/db`, `@/lib/mailer`, SDKs)
+- [ ] Mocks are only at a boundary (network via MSW, time, navigation, the database and email modules, SDKs)
 - [ ] Assertions are specific: exact arguments, exact status, exact text or pattern. No
       `toBeTruthy()` on something that has a real value, no bare `toHaveBeenCalled()`
 - [ ] No `waitFor` wrapping a `getBy*` (use `findBy*`), no `setTimeout`, no real waits
@@ -290,8 +318,11 @@ The things that differ from the Jest you may know from other projects, all handl
 
 - **jsdom has no `fetch`.** Plain `jest-environment-jsdom` leaves out `fetch`, `Response`,
   `Request`, `TextEncoder` and friends. `jest.environment.mjs` copies them in from Node, and
-  nothing else: `FormData` stays jsdom's so `new FormData(formElement)` keeps working. Stub
-  `fetch` per test file with `global.fetch = jest.fn()` in a `beforeEach`.
+  nothing else: `FormData` stays jsdom's so `new FormData(formElement)` keeps working.
+- **Packages that ship only ES modules** fail to load ("Must use import to load ES Module").
+  `jest.config.mjs` has an `esmPackages` list that Jest compiles; MSW's dependencies are in it.
+  It also sets `customExportConditions: ['']` so packages load their Node builds rather than
+  their browser builds. See `docs/troubleshooting.md`.
 - **`jest.resetAllMocks()` removes default implementations,** including the ones in a
   `jest.mock` factory. That is why `jest.setup.ts` sets the `next/navigation` defaults in a
   `beforeEach`. Do the same for any shared mock with a default: create the `jest.fn()` in the
@@ -325,18 +356,24 @@ have few cores; `--maxWorkers=50%` is a good start) before splitting anything.
 
 ## Reference tests in this repo
 
-- `src/lib/format-price.test.ts`: pure function, four behaviours, one error case
-- `src/lib/validate-contact.test.ts`: table test with `it.each`, one row per rule
-- `src/lib/apply-coupon.test.ts`: boundaries on both sides of each limit, time passed in as a
-  parameter (the worked example in the README)
-- `src/components/ui/button.test.tsx`: role queries, `userEvent`, prop forwarding
-- `src/components/contact-form.test.tsx`: all five form states, `fetch` stubbed at the
-  boundary, `findBy*` for async, a controlled in-flight request, a regression test, testid
-  from `TID` for CMS-driven copy
-- `src/hooks/use-debounced-value.test.ts`: `renderHook`, `rerender`, fake timers
-- `src/components/search-box.test.tsx`: fake timers with `userEvent`, keyboard, navigation
+All in `src/examples/` (copied into an app with `setup.sh --examples`):
+
+- `lib/format-price.test.ts`: pure function, four behaviours, one error case
+- `lib/validate-contact.test.ts`: table test with `it.each`, one row per rule
+- `lib/apply-coupon.test.ts`: boundaries on both sides of each limit, time passed in as a
+  parameter (the function walkthrough in the README)
+- `components/confirm-dialog.test.tsx`: role queries, keyboard, focus, a portal, a failing
+  callback (the component walkthrough in the README)
+- `components/product-list.test.tsx`: loading, empty, error with retry, loaded, sorting; MSW;
+  a test data builder; `within()` per row
+- `components/cart.test.tsx`: components and a hook that need a provider (`wrapper`)
+- `components/contact-form.test.tsx`: all five form states against MSW, a response held in
+  flight, a regression test, testid from `TID` for CMS-driven copy
+- `components/ui/button.test.tsx`: role queries, `userEvent`, prop forwarding
+- `components/search-box.test.tsx`: fake timers with `userEvent`, keyboard, navigation
   asserted with exact URLs, `mockUrl`
-- `src/app/api/contact/route.test.ts`: route handler in the Node environment, hostile-input
-  table, mailer mocked, `process.env` set per test
-- `src/app/actions/subscribe.test.ts`: server action, `jest.mock('@/lib/db')`, idempotency,
+- `hooks/use-debounced-value.test.ts`: `renderHook`, `rerender`, fake timers
+- `api/contact/route.test.ts`: route handler in the Node environment, hostile-input table,
+  mailer mocked, `process.env` set per test
+- `actions/subscribe.test.ts`: server action, the database module mocked, idempotency,
   infrastructure failure

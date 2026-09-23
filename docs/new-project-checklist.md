@@ -36,14 +36,14 @@ they mean quality is the default instead of a retrofit.
 ## 5. ClickUp
 
 - [ ] Connect the repo to the Space (App Center > GitHub)
-- [ ] Create the project's sprint list with the statuses from `docs/clickup-setup.md`
+- [ ] Create the project's sprint list with the statuses from the QA starter's `docs/clickup-setup.md`
 - [ ] Apply the QA kickoff and Definition of Done checklist templates to the first stories
 - [ ] Add the first journeys to the Automation backlog
 
 ## 6. Team agreement (30-minute meeting)
 
-- [ ] Walk through `docs/unit-testing-practices.md` and `docs/testid-conventions.md`
-- [ ] Agree the Definition of Done in `docs/team-practices.md`
+- [ ] Walk through `docs/unit-testing-practices.md` and `docs/testid-conventions.md` (this kit)
+- [ ] Agree the Definition of Done in the QA starter's `docs/team-practices.md`
 - [ ] Agree the branch naming rule: `CU-<taskid>-short-description`
 - [ ] Decide who reviews test code (answer: the same people who review production code)
 

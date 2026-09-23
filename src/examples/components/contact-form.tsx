@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Button } from '@/components/ui/button';
-import { validateContact, type ContactErrors } from '@/lib/validate-contact';
+import { Button } from '@/examples/components/ui/button';
+import { validateContact, type ContactErrors } from '@/examples/lib/validate-contact';
 import { TID } from '@/test-ids';
 
 type Status = 'idle' | 'submitting' | 'success' | 'error';
