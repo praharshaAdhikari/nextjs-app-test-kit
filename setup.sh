@@ -184,11 +184,46 @@ NODE
   # --- ESLint ------------------------------------------------------------------------------
 
   step "Wiring ESLint"
-  local eslint_status
+  local eslint_status extra_deps=""
   eslint_status="$(node - <<'NODE'
 const fs = require('fs');
 const file = ['eslint.config.mjs', 'eslint.config.js', 'eslint.config.ts'].find((f) => fs.existsSync(f));
-if (!file) { console.log('missing'); process.exit(0); }
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+const legacy =
+  ['.eslintrc', '.eslintrc.js', '.eslintrc.cjs', '.eslintrc.json', '.eslintrc.yml', '.eslintrc.yaml'].find((f) =>
+    fs.existsSync(f),
+  ) || (pkg.eslintConfig ? 'package.json "eslintConfig"' : null);
+
+if (!file && legacy) { console.log(`legacy:${legacy}`); process.exit(0); }
+
+if (!file) {
+  // No ESLint set up at all (common in apps that relied on `next lint`). Lint the tests only:
+  // turning on Next's full rule set here would fail `npm run check` on code nobody has linted.
+  fs.writeFileSync('eslint.config.mjs', `import { globalIgnores } from 'eslint/config';
+import tseslint from 'typescript-eslint';
+import { testingConfig } from './eslint.testing.mjs';
+
+/**
+ * Created by nextjs-app-test-kit's setup.sh, because this app had no ESLint config.
+ *
+ * It only checks test files and data-testid values, so existing code is not judged by rules it
+ * was never written against. To lint the whole app the way a new Next.js app does, see
+ * "No ESLint config yet?" in the kit README.
+ */
+export default [
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'coverage/**', 'next-env.d.ts']),
+  // Existing eslint-disable comments name rules this config does not turn on; do not report them.
+  { linterOptions: { reportUnusedDisableDirectives: 'off' } },
+  // Lets ESLint read TypeScript and JSX. Adds no rules by itself.
+  { files: ['**/*.{ts,tsx,mts,cts}'], languageOptions: { parser: tseslint.parser } },
+  { files: ['**/*.{js,jsx,mjs,cjs}'], languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } } },
+  ...testingConfig,
+];
+`);
+  console.log('created');
+  process.exit(0);
+}
+
 let s = fs.readFileSync(file, 'utf8');
 if (s.includes('testingConfig')) { console.log(`already:${file}`); process.exit(0); }
 const exportLine = /^export default eslintConfig;\s*$/m;
@@ -212,9 +247,37 @@ NODE
   case "$eslint_status" in
     done:*) echo "  ${eslint_status#done:}: added testingConfig and ignored coverage/" ;;
     already:*) echo "  ${eslint_status#already:} already uses testingConfig" ;;
-    missing) warn "No eslint.config.* found. Add testingConfig by hand: see 'Wire ESLint' in the kit README." ;;
+    created)
+      echo "  eslint.config.mjs: created, with the testing rules only (the app had no ESLint config)"
+      extra_deps="eslint typescript-eslint"
+      ;;
+    legacy:*) warn "ESLint is configured in ${eslint_status#legacy:} (the old format). The kit's rules need eslint.config.mjs: see 'ESLint config the script cannot edit' in the kit README." ;;
     manual:*) warn "${eslint_status#manual:} has no 'export default eslintConfig;' line. Add testingConfig by hand: see 'Wire ESLint' in the kit README." ;;
   esac
+
+  # `next lint` was removed in Next 16; there it fails with "Invalid project directory provided".
+  node - <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+let nextMajor = NaN;
+try {
+  nextMajor = parseInt(JSON.parse(fs.readFileSync(path.resolve('node_modules/next/package.json'), 'utf8')).version, 10);
+} catch {
+  const range = { ...pkg.dependencies, ...pkg.devDependencies }.next || '';
+  nextMajor = parseInt((range.match(/\d+/) || [])[0], 10);
+}
+const lint = pkg.scripts?.lint;
+if (lint && /^next lint\b/.test(lint) && nextMajor >= 16) {
+  pkg.scripts.lint = 'eslint .';
+  fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+  console.log(`  lint: was "${lint}", which Next ${nextMajor} no longer has; now "eslint ."`);
+} else if (!lint && fs.existsSync('eslint.config.mjs')) {
+  pkg.scripts = { ...pkg.scripts, lint: 'eslint .' };
+  fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+  console.log('  lint: eslint .');
+}
+NODE
 
   # --- Install and check -------------------------------------------------------------------
 
@@ -224,6 +287,7 @@ NODE
       const { devDependencies } = require(process.env.KIT + "/package.additions.json");
       console.log(Object.entries(devDependencies).map(([n, v]) => `${n}@${v}`).join(" "));
     ')"
+    [ -n "$extra_deps" ] && deps="$deps $extra_deps"
     if [ -f pnpm-lock.yaml ]; then pm=pnpm
     elif [ -f yarn.lock ]; then pm=yarn
     elif [ -f bun.lock ] || [ -f bun.lockb ]; then pm=bun

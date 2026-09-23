@@ -108,6 +108,12 @@ The script handles these on its own:
 - **Scripts you already have** (a `typecheck` or `check` of your own) are kept; the script prints
   the ones it skipped.
 - **Files that already exist** stop the script before it changes anything.
+- **No ESLint config at all** (common in apps that relied on `next lint`): it creates an
+  `eslint.config.mjs` with the testing rules only, and installs `eslint` and `typescript-eslint`.
+  Existing code is not linted, so `npm run check` does not fail on code nobody has checked
+  before. See "No ESLint config yet?" below to turn on Next's full rules later.
+- **`"lint": "next lint"` on Next 16 or later:** that command no longer exists (it fails with
+  "Invalid project directory provided ... /lint"), so the script changes it to `eslint .`.
 - **pnpm 11 build approvals:** the kit's two packages with install scripts (`msw`,
   `@parcel/watcher`) are set to `false` in `pnpm-workspace.yaml`; neither is needed for tests.
   Any other package waiting for a decision is left to you (`pnpm approve-builds`).
@@ -135,6 +141,35 @@ eslintConfig.push(...testingConfig, { ignores: ['coverage/**'] });
 
 `eslint.testing.mjs` is flat config. With `.eslintrc`, move to `eslint.config.mjs` first, or
 copy its rules into an `overrides` block for test files.
+
+**No ESLint config yet?** The script's `eslint.config.mjs` checks test files and `data-testid`
+values only. To lint the whole app the way a new Next.js app does, when you are ready to fix what
+it finds:
+
+```bash
+npm install -D eslint-config-next
+```
+
+```js
+// eslint.config.mjs
+import { defineConfig, globalIgnores } from 'eslint/config';
+import nextVitals from 'eslint-config-next/core-web-vitals';
+import nextTs from 'eslint-config-next/typescript';
+import { testingConfig } from './eslint.testing.mjs';
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'coverage/**']),
+]);
+eslintConfig.push(...testingConfig);
+
+export default eslintConfig;
+```
+
+An app that has never been linted can report hundreds of problems at first, mostly
+`no-explicit-any` and unused variables. `npx eslint . --fix` handles some; turn noisy rules to
+`'warn'` while you work through the rest, rather than leaving the full set off.
 
 Check these after running it:
 

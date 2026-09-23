@@ -115,6 +115,20 @@ const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 await user.type(input, 'boots');
 ```
 
+## "Invalid project directory provided, no such directory: .../lint"
+
+```
+> next lint
+Invalid project directory provided, no such directory: /path/to/app/lint
+```
+
+**Cause:** the app's `lint` script is `next lint`, which Next 16 removed. `next` now reads `lint`
+as the name of a project folder.
+
+**Fix:** set `"lint": "eslint ."` in `package.json`, and make sure the app has an
+`eslint.config.mjs`. Re-running `setup.sh` does both; if the app had no ESLint config, it creates
+one that checks the tests only (see "No ESLint config yet?" in the README).
+
 ## "No tests found, exiting with code 1"
 
 **Cause:** there are no `*.test.ts(x)` files under `src/` yet, or `testMatch` does not match
